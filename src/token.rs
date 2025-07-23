@@ -4,7 +4,7 @@ use ethers::{
     prelude::*, providers::{Http, Provider}, 
     signers::{LocalWallet},
 };
-use std::{sync::Arc};
+use std::{sync::Arc, time::Duration};
 
 abigen!(
     ERC20Contract,
@@ -39,9 +39,19 @@ impl TokenClient
 
     pub async fn transfer(&self, to: Address, amount: U256) -> Result<(), Box<dyn std::error::Error>> {
         match self.contract.transfer(to, amount).send().await {
-            Ok(mined_tx) => {
-                println!("Transaction successful: {:?}", mined_tx);
-                Ok(())
+            Ok(pending_tx) => {
+                println!("Транзакция отправлена, ожидаем подтверждения...");
+
+                match pending_tx.await {
+                    Ok(_) => {
+                        println!("Отправка токенов с transfer завершилась");
+                        Ok(())
+                    }
+                    Err(err) => {
+                        println!("Ошибка подтверждения транзакции для {:?}", err);
+                        Err(err.into())
+                }
+                }
             }
             Err(err) => {
                 println!("Error during transfer: {:?}", err);
@@ -50,13 +60,29 @@ impl TokenClient
         }
     }
     pub async fn approve(&self, spender: Address, amount: U256) -> Result<(), Box<dyn std::error::Error>> {
-        match self.contract.approve(spender, amount).send().await {
-            Ok(result) => {
-                println!("Дано разрешение на {}: {:?}", spender, result);
-                Ok(())
+       match self.contract.approve(spender, amount).send().await {
+            Ok(pending_tx) => {
+                println!("Транзакция approve отправлена, ожидаем подтверждения...");
+                
+                match pending_tx.await {
+                    Ok(receipt) => {
+                        println!("Разрешение успешно дано для {}", spender);
+                        if let Some(receipt) = &receipt {
+                            println!("Блок: {:?}, Gas использовано: {:?}", 
+                                receipt.block_number, 
+                                receipt.gas_used
+                            );
+                        }
+                        Ok(())
+                    }
+                    Err(err) => {
+                        println!("Ошибка подтверждения транзакции approve для {}: {:?}", spender, err);
+                        Err(err.into())
+                    }
+                }
             }
             Err(err) => {
-                println!("Ошибка дачи разрешения на {}: {:?}", spender, err);
+                println!("Ошибка отправки транзакции approve для {}: {:?}", spender, err);
                 Err(err.into())
             }
         }
@@ -64,7 +90,7 @@ impl TokenClient
     pub async fn allowance(&self, owner: Address, spender: Address) -> Result<U256, Box<dyn std::error::Error>> {
         match self.contract.allowance(owner, spender).call().await {
             Ok(amount) => {
-                println!("Allowance от {} на {}: {:?}", owner, spender, amount);
+                println!("Allowance от {} на {}: {}", owner, spender, amount);
                 Ok(amount)
             }
             Err(err) => {
@@ -80,12 +106,28 @@ impl TokenClient
         amount: U256
     ) -> Result<(), Box<dyn std::error::Error>> {
         match self.contract.transfer_from(from, to, amount).send().await {
-            Ok(mined_tx) => {
-                println!("Transaction successful: {:?}", mined_tx);
-                Ok(())
+            Ok(pending_tx) => {
+                println!("Транзакция transferFrom отправлена, ожидаем подтверждения...");
+                
+                match pending_tx.await {
+                    Ok(receipt) => {
+                        println!("TransferFrom успешно выполнен от {} к {} на сумму {}", from, to, amount);
+                        if let Some(receipt) = &receipt {
+                            println!("Блок: {:?}, Gas использовано: {:?}", 
+                                receipt.block_number, 
+                                receipt.gas_used
+                            );
+                        }
+                        Ok(())
+                    }
+                    Err(err) => {
+                        println!("Ошибка подтверждения транзакции transferFrom: {:?}", err);
+                        Err(err.into())
+                    }
+                }
             }
             Err(err) => {
-                println!("Error during transfer: {:?}", err);
+                println!("Ошибка отправки транзакции transferFrom: {:?}", err);
                 Err(err.into())
             }
         }
